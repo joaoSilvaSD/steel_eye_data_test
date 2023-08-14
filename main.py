@@ -3,12 +3,20 @@ import pandas as pd
 import xmltodict
 import os
 import zipfile
+import xml.etree.ElementTree as ET
+import csv
+from io import StringIO
+import boto3
+
+# Your AWS S3 bucket and CSV file name
+s3_bucket_name = 'your-s3-bucket-name'
+csv_file_name = 'output.csv'
+
 
 
 # URL of the XML file you want to download
 XML_URL = "https://registers.esma.europa.eu/solr/esma_registers_firds_files/select?q=*&fq=publication_date:%5B2021-01-17T00:00:00Z+TO+2021-01-19T23:59:59Z%5D&wt=xml&indent=true&start=0&rows=100"
 XML_LOCAL_NAME = "downloaded_file.xml"
-
 
 
 '''
@@ -35,11 +43,14 @@ def download_xml_file(xml_url: str) -> None:
 '''
     read xml file and tranform to a dataFrame
 '''
-def read_xml_file() -> pd.DataFrame:
-    with open(XML_LOCAL_NAME) as xml_file:
+def read_xml_file(path: str) -> dict:
+    with open(path, 'r', encoding='utf-8') as xml_file:
         xml_data = xml_file.read()
     xml_dict = xmltodict.parse(xml_data)
 
+    return xml_dict
+    
+def transform_first_xml(xml_dict: dict) ->pd.DataFrame:
     docs = xml_dict['response']['result']['doc']
 
     data = []
@@ -65,7 +76,7 @@ def read_xml_file() -> pd.DataFrame:
         })
 
     return pd.DataFrame(data)
-    
+
 def download_zip(df: pd.DataFrame) -> None:
     filtered_df = df[df['file_type'] == 'DLTINS']
     
@@ -111,10 +122,75 @@ def extract_xml_from_zip(path: str) -> None:
     else:
         print("No XML files extracted from the zip.")
 
+def get_dltins_filename() -> str:
+    # List all files in the directory
+    files_in_directory = os.listdir(os.path.dirname(os.path.abspath(__file__)))
+    filtered_files = [filename for filename in files_in_directory if filename.startswith("DLTINS_") and filename.endswith(".xml")]
+
+    if filtered_files:
+        xml_file_name = filtered_files[0]
+
+    return xml_file_name
+
+def transform_xml_to_csv(xml_dix: dict):
+    # Extracting the necessary information from the dictionary
+    instruments = xml_dix['BizData']['Pyld']['Document']['FinInstrmRptgRefDataDltaRpt']['FinInstrm']
+    # Create a CSV file in memory
+    
+    csv_output = StringIO()
+    csv_writer = csv.writer(csv_output)
+
+    # Write the CSV header
+    header = [
+        'FinInstrmGnlAttrbts.Id',
+        'FinInstrmGnlAttrbts.FullNm',
+        'FinInstrmGnlAttrbts.ClssfctnTp',
+        'FinInstrmGnlAttrbts.CmmdtyDerivInd',
+        'FinInstrmGnlAttrbts.NtnlCcy',
+        'Issr'
+    ]
+    csv_writer.writerow(header)
+
+    # Iterate through instruments and extract data
+    for instrm in instruments:
+        try:
+            instrm_gnl_attrbts = instrm['TermntdRcrd']
+            print(instrm_gnl_attrbts)
+
+            id_ = instrm_gnl_attrbts['FinInstrmGnlAttrbts']['Id']
+            full_nm = instrm_gnl_attrbts['FinInstrmGnlAttrbts']['FullNm']
+            clssfctn_tp = instrm_gnl_attrbts['FinInstrmGnlAttrbts']['ClssfctnTp']
+            cmmdty_deriv_ind = instrm_gnl_attrbts['FinInstrmGnlAttrbts']['CmmdtyDerivInd']
+            ntnl_ccy = instrm_gnl_attrbts['FinInstrmGnlAttrbts']['NtnlCcy']
+            issr = instrm_gnl_attrbts['Issr']
+
+            # Write data to CSV
+            csv_writer.writerow([id_, full_nm, clssfctn_tp, cmmdty_deriv_ind, ntnl_ccy, issr])
+
+        except KeyError:
+            # Skip this line
+            pass
+
+    # Get the CSV content
+    csv_content = csv_output.getvalue()
+
+    # Upload the CSV content to S3
+    s3_client = boto3.client('s3')
+    s3_client.put_object(Bucket=s3_bucket_name, Key=csv_file_name, Body=csv_content)
+
+    print(f'CSV file has been uploaded to {s3_bucket_name}/{csv_file_name}')
+
+
 def main():
     download_xml_file(XML_URL)
-    xml = read_xml_file()
-    download_zip(xml)
+    xml_dic_1 = read_xml_file(XML_LOCAL_NAME)
+    xml_df = transform_first_xml(xml_dic_1)
+    download_zip(xml_df)
+
+    dltins_filename = get_dltins_filename()
+    xml_dic_2 = read_xml_file(dltins_filename)
+    transform_xml_to_csv(xml_dic_2)
+
 
 
 
