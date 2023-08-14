@@ -25,7 +25,7 @@ XML_LOCAL_NAME = "downloaded_file.xml"
 '''
     download the xml file from url if the status code is 200, receives the URL
 '''
-def download_xml_file(xml_url: str) -> None:
+def download_xml_file(xml_url: str):
     try:
         # Send an HTTP GET request to the URL
         response = requests.get(xml_url)
@@ -38,10 +38,14 @@ def download_xml_file(xml_url: str) -> None:
             with open(XML_LOCAL_NAME, "wb") as f:
                 f.write(xml_content)
             logger.info("XML file downloaded successfully.")
+            return response.content
         else:
             logger.error("Failed to download XML file. Status code: %d", response.status_code)
+            return None
     except Exception as e:
         logger.error("Error while downloading %s", xml_url)
+        return None
+
 
 '''
     read xml file and tranform to a DataFrame, receives the path
@@ -57,7 +61,7 @@ def read_xml_file(path: str) -> dict:
 '''
     tranform first xml dictionary into a dataFramem receives the dictionary 
 '''   
-def transform_first_xml(xml_dict: dict) ->pd.DataFrame:
+def transform_first_xml(xml_dict: dict) -> pd.DataFrame:
     docs = xml_dict['response']['result']['doc']
 
     data = []
@@ -88,7 +92,7 @@ def transform_first_xml(xml_dict: dict) ->pd.DataFrame:
 '''
     get link from DataFrame and download the .zip, receives the DataFrame
 '''
-def download_zip(df: pd.DataFrame) -> None:
+def download_zip(df: pd.DataFrame):
     filtered_df = df[df['file_type'] == 'DLTINS']
     
     if not filtered_df.empty:
@@ -119,7 +123,7 @@ def download_zip(df: pd.DataFrame) -> None:
 '''
     extract the xml file from a zip, receives the .zip path
 '''
-def extract_xml_from_zip(path: str) -> None:
+def extract_xml_from_zip(path: str):
     # Create the output directory if it doesn't exist
     if not os.path.exists(os.path.dirname(os.path.abspath(__file__))):
         os.makedirs(os.path.dirname(os.path.abspath(__file__)))
