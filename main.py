@@ -3,16 +3,19 @@ import pandas as pd
 import xmltodict
 import os
 import zipfile
-import xml.etree.ElementTree as ET
 import csv
 from io import StringIO
+import logging
 import boto3
+
+
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 
 # Your AWS S3 bucket and CSV file name
 s3_bucket_name = 'your-s3-bucket-name'
 csv_file_name = 'output.csv'
-
-
 
 # URL of the XML file you want to download
 XML_URL = "https://registers.esma.europa.eu/solr/esma_registers_firds_files/select?q=*&fq=publication_date:%5B2021-01-17T00:00:00Z+TO+2021-01-19T23:59:59Z%5D&wt=xml&indent=true&start=0&rows=100"
@@ -20,7 +23,7 @@ XML_LOCAL_NAME = "downloaded_file.xml"
 
 
 '''
-    download the xml file from url if the status code is 200
+    download the xml file from url if the status code is 200, receives the URL
 '''
 def download_xml_file(xml_url: str) -> None:
     try:
@@ -34,22 +37,26 @@ def download_xml_file(xml_url: str) -> None:
             # Save the content to a local file
             with open(XML_LOCAL_NAME, "wb") as f:
                 f.write(xml_content)
-            print("XML file downloaded successfully.")
+            logger.info("XML file downloaded successfully.")
         else:
-            raise Exception(f"Failed to download XML file. Status code: {response.status_code}")
+            logger.error("Failed to download XML file. Status code: %d", response.status_code)
     except Exception as e:
-        raise Exception(f"Error while downloading '{xml_url}': {str(e)}")
+        logger.error("Error while downloading %s", xml_url)
 
 '''
-    read xml file and tranform to a dataFrame
+    read xml file and tranform to a DataFrame, receives the path
 '''
 def read_xml_file(path: str) -> dict:
     with open(path, 'r', encoding='utf-8') as xml_file:
         xml_data = xml_file.read()
     xml_dict = xmltodict.parse(xml_data)
+    logger.info("XML file read successfully.")
 
     return xml_dict
     
+'''
+    tranform first xml dictionary into a dataFramem receives the dictionary 
+'''   
 def transform_first_xml(xml_dict: dict) ->pd.DataFrame:
     docs = xml_dict['response']['result']['doc']
 
@@ -75,8 +82,12 @@ def transform_first_xml(xml_dict: dict) ->pd.DataFrame:
             'timestamp': timestamp
         })
 
+    logger.info("First xml tranformed to a DataFrame")
     return pd.DataFrame(data)
 
+'''
+    get link from DataFrame and download the .zip, receives the DataFrame
+'''
 def download_zip(df: pd.DataFrame) -> None:
     filtered_df = df[df['file_type'] == 'DLTINS']
     
@@ -93,17 +104,21 @@ def download_zip(df: pd.DataFrame) -> None:
             if response.status_code == 200:
                 with open(save_path, "wb") as file:
                     file.write(response.content)
-                print(first_item['file_name'] + " downloaded successfully.")
+
+                logger.info("%s downloaded successfully.", first_item['file_name'])
 
                 extract_xml_from_zip(save_path)
             else:
-                 raise Exception("Failed to download the file. Status code:", response.status_code)
+                logger.error("Failed to download the file. Status code: %d", response.status_code)
         else:
-            raise Exception("Failed find download_link in dataFrame.")
+            logger.error("Failed find download_link in dataFrame.")
     else:
-        raise Exception("Failed find DLTINS file_type in dataFrame.")
+        logger.error("Failed find DLTINS file_type in dataFrame.")
 
 
+'''
+    extract the xml file from a zip, receives the .zip path
+'''
 def extract_xml_from_zip(path: str) -> None:
     # Create the output directory if it doesn't exist
     if not os.path.exists(os.path.dirname(os.path.abspath(__file__))):
@@ -118,10 +133,14 @@ def extract_xml_from_zip(path: str) -> None:
 
     if xml_files:
         xml_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), xml_files[0])
-        print("XML file extracted:", xml_file_path)
+        logger.info("XML file extracted: %s", xml_file_path)
     else:
-        print("No XML files extracted from the zip.")
+        logger.error("No XML files extracted from the zip.")
 
+
+'''
+    get the xml filename that starts with "DLTINS_" in folder
+'''
 def get_dltins_filename() -> str:
     # List all files in the directory
     files_in_directory = os.listdir(os.path.dirname(os.path.abspath(__file__)))
@@ -130,8 +149,13 @@ def get_dltins_filename() -> str:
     if filtered_files:
         xml_file_name = filtered_files[0]
 
+    logger.info("Filename found: %s", xml_file_name)
     return xml_file_name
 
+
+'''
+    tranform the xml dictionary into a csv file, receives a dictionary
+'''
 def transform_xml_to_csv(xml_dix: dict):
     # Extracting the necessary information from the dictionary
     instruments = xml_dix['BizData']['Pyld']['Document']['FinInstrmRptgRefDataDltaRpt']['FinInstrm']
@@ -155,7 +179,6 @@ def transform_xml_to_csv(xml_dix: dict):
     for instrm in instruments:
         try:
             instrm_gnl_attrbts = instrm['TermntdRcrd']
-            print(instrm_gnl_attrbts)
 
             id_ = instrm_gnl_attrbts['FinInstrmGnlAttrbts']['Id']
             full_nm = instrm_gnl_attrbts['FinInstrmGnlAttrbts']['FullNm']
@@ -168,19 +191,27 @@ def transform_xml_to_csv(xml_dix: dict):
             csv_writer.writerow([id_, full_nm, clssfctn_tp, cmmdty_deriv_ind, ntnl_ccy, issr])
 
         except KeyError:
-            # Skip this line
             pass
 
     # Get the CSV content
     csv_content = csv_output.getvalue()
+    logger.info("Transformed xml into csv.")
 
-    # Upload the CSV content to S3
+    with open('output.csv', mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows(csv_content)
+    logger.info("Wrote new csv file.")
+
+
+"""     # Upload the CSV content to S3
     s3_client = boto3.client('s3')
     s3_client.put_object(Bucket=s3_bucket_name, Key=csv_file_name, Body=csv_content)
 
-    print(f'CSV file has been uploaded to {s3_bucket_name}/{csv_file_name}')
+    print(f'CSV file has been uploaded to {s3_bucket_name}/{csv_file_name}') """
 
-
+'''
+    main
+'''
 def main():
     download_xml_file(XML_URL)
     xml_dic_1 = read_xml_file(XML_LOCAL_NAME)
@@ -190,8 +221,5 @@ def main():
     dltins_filename = get_dltins_filename()
     xml_dic_2 = read_xml_file(dltins_filename)
     transform_xml_to_csv(xml_dic_2)
-
-
-
 
 main()
