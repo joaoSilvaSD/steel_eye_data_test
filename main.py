@@ -32,7 +32,7 @@ def download_xml_file(xml_url: str):
 
         # Send an HTTP GET request to the URL
         response = requests.get(xml_url)
-
+        pdb.set_trace()
         if response.status_code == 200:
             # Get content from response
             xml_content = response.content
@@ -171,10 +171,10 @@ def get_dltins_filename() -> str:
     if filtered_files:
         xml_file_name = filtered_files[0]
         logger.info("Filename found: %s.", xml_file_name)
+        return xml_file_name
     else:
         logger.error("Could not find file.")
-        
-    return xml_file_name
+        return None
 
 
 '''
@@ -226,7 +226,6 @@ def transform_xml_to_csv(xml_dix: dict):
         writer = csv.writer(file)
         writer.writerows(csv_content)
     logger.info("Wrote new csv file.") """
-
 
     # Upload the CSV content to S3
     s3_client = boto3.client('s3')
