@@ -7,6 +7,7 @@ import csv
 from io import StringIO
 import logging
 import boto3
+import pdb 
 
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 # Your AWS S3 bucket and CSV file name
-s3_bucket_name = 'your-s3-bucket-name'
+s3_bucket_name = 'joao-silva-csv-bucket'
 csv_file_name = 'output.csv'
 
 # URL of the XML file you want to download
@@ -27,6 +28,8 @@ XML_LOCAL_NAME = "downloaded_file.xml"
 '''
 def download_xml_file(xml_url: str):
     try:
+        #pdb.set_trace()
+
         # Send an HTTP GET request to the URL
         response = requests.get(xml_url)
 
@@ -201,17 +204,18 @@ def transform_xml_to_csv(xml_dix: dict):
     csv_content = csv_output.getvalue()
     logger.info("Transformed xml into csv.")
 
+
     with open('output.csv', mode='w', newline='') as file:
         writer = csv.writer(file)
         writer.writerows(csv_content)
     logger.info("Wrote new csv file.")
 
 
-"""     # Upload the CSV content to S3
+    # Upload the CSV content to S3
     s3_client = boto3.client('s3')
     s3_client.put_object(Bucket=s3_bucket_name, Key=csv_file_name, Body=csv_content)
 
-    print(f'CSV file has been uploaded to {s3_bucket_name}/{csv_file_name}') """
+    print(f'CSV file has been uploaded to {s3_bucket_name}/{csv_file_name}') 
 
 '''
     main
