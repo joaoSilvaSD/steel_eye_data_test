@@ -28,11 +28,8 @@ XML_LOCAL_NAME = "downloaded_file.xml"
 '''
 def download_xml_file(xml_url: str):
     try:
-        #pdb.set_trace()
-
-        # Send an HTTP GET request to the URL
         response = requests.get(xml_url)
-        pdb.set_trace()
+        
         if response.status_code == 200:
             # Get content from response
             xml_content = response.content
@@ -104,35 +101,43 @@ def transform_first_xml(xml_dict: dict) -> pd.DataFrame:
     get link from DataFrame and download the .zip, receives the DataFrame
 '''
 def download_zip(df: pd.DataFrame):
-    filtered_df = df[df['file_type'] == 'DLTINS']
-    
-    if not filtered_df.empty:
-        first_item = filtered_df.iloc[0]
-        download_zip_link = first_item['download_link']
 
-        if download_zip_link:
-            # Save .zip to the directory of the Python script itself
-            save_dir = os.path.dirname(os.path.abspath(__file__))
-            save_path = os.path.join(save_dir, first_item['file_name'])
+    if not df.empty:
+        if 'file_type' in df.columns and 'download_link' in df.columns:
+            filtered_df = df[df['file_type'] == 'DLTINS']
+            if not filtered_df.empty:
+                first_item = filtered_df.iloc[0]
+                download_zip_link = first_item['download_link']
 
-            response = requests.get(download_zip_link)
+                if download_zip_link:
+                    # Save .zip to the directory of the Python script itself
+                    save_dir = os.path.dirname(os.path.abspath(__file__))
+                    save_path = os.path.join(save_dir, first_item['file_name'])
 
-            if response.status_code == 200:
-                with open(save_path, "wb") as file:
-                    file.write(response.content)
+                    response = requests.get(download_zip_link)
 
-                logger.info("%s downloaded successfully.", first_item['file_name'])
+                    if response.status_code == 200:
+                        with open(save_path, "wb") as file:
+                            file.write(response.content)
 
-                extract_xml_from_zip(save_path)
-                return response.content
+                        logger.info("%s downloaded successfully.", first_item['file_name'])
+
+                        extract_xml_from_zip(save_path)
+                        return response.content
+                    else:
+                        logger.error("Failed to download the file. Status code: %d", response.status_code)
+                        return None
+                else:
+                    logger.error("Failed to find download_link in DataFrame.")
+                    return None
             else:
-                logger.error("Failed to download the file. Status code: %d", response.status_code)
+                logger.error("Failed to find DLTINS file_type in DataFrame.")
                 return None
         else:
-            logger.error("Failed to find download_link in DataFrame.")
+            logger.error("Failed to find column file_type or download_link in DataFrame.")
             return None
     else:
-        logger.error("Failed to find DLTINS file_type in DataFrame.")
+        logger.error("Empty DataFrame.")
         return None
 
 
@@ -140,9 +145,6 @@ def download_zip(df: pd.DataFrame):
     extract the xml file from a zip, receives the .zip path
 '''
 def extract_xml_from_zip(path: str):
-    # Create the output directory if it doesn't exist
-    if not os.path.exists(os.path.dirname(os.path.abspath(__file__))):
-        os.makedirs(os.path.dirname(os.path.abspath(__file__)))
 
     # Extract all files from the zip archive
     with zipfile.ZipFile(path, 'r') as zip_ref:
@@ -166,7 +168,7 @@ def get_dltins_filename() -> str:
     files_in_directory = os.listdir(os.path.dirname(os.path.abspath(__file__)))
     filtered_files = [filename for filename in files_in_directory if filename.startswith("DLTINS_") and filename.endswith(".xml")]
 
-    xml_file_name = None  # Default value
+    xml_file_name = None 
     
     if filtered_files:
         xml_file_name = filtered_files[0]
@@ -183,7 +185,6 @@ def get_dltins_filename() -> str:
 def transform_xml_to_csv(xml_dix: dict):
     # Extracting the necessary information from the dictionary
     instruments = xml_dix['BizData']['Pyld']['Document']['FinInstrmRptgRefDataDltaRpt']['FinInstrm']
-    # Create a CSV file in memory
     
     csv_output = StringIO()
     csv_writer = csv.writer(csv_output)
@@ -199,7 +200,6 @@ def transform_xml_to_csv(xml_dix: dict):
     ]
     csv_writer.writerow(header)
 
-    # Iterate through instruments and extract data
     for instrm in instruments:
         try:
             instrm_gnl_attrbts = instrm['TermntdRcrd']
@@ -211,7 +211,6 @@ def transform_xml_to_csv(xml_dix: dict):
             ntnl_ccy = instrm_gnl_attrbts['FinInstrmGnlAttrbts']['NtnlCcy']
             issr = instrm_gnl_attrbts['Issr']
 
-            # Write data to CSV
             csv_writer.writerow([id_, full_nm, clssfctn_tp, cmmdty_deriv_ind, ntnl_ccy, issr])
 
         except KeyError:
@@ -245,4 +244,5 @@ def main():
     xml_dic_2 = read_xml_file(dltins_filename)
     transform_xml_to_csv(xml_dic_2)
 
-main()
+if __name__ == '__main__':
+    main()

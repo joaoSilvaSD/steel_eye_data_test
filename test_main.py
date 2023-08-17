@@ -1,16 +1,16 @@
 import unittest
-import main
+import module.main as main
 import os
 import zipfile
 import tempfile
-import shutil
 import pandas as pd
 from unittest.mock import patch, MagicMock, mock_open
 
 class TestMain(unittest.TestCase):
 
-    @patch("main.requests.get")
-    def test_failed_download_xml_file(self, mock_get):
+    @patch('module.main.logger', autospec=True)
+    @patch("module.main.requests.get")
+    def test_failed_download_xml_file(self, mock_get, mock_logger):
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_get.return_value = mock_response
@@ -21,15 +21,15 @@ class TestMain(unittest.TestCase):
         mock_get.assert_called_once_with(main.XML_URL)
 
 
-    @patch('main.requests.get', side_effect=Exception("Mocked exception"))
-    def test_exception_download_xml_file(self,mock_get):
+    @patch('module.main.requests.get', side_effect=Exception("Mocked exception"))
+    def test_exception_download_xml_file(self, mock_get):
         result = main.download_xml_file(main.XML_URL)
 
         self.assertIsNone(result)
         mock_get.assert_called_once_with(main.XML_URL)
 
 
-    @patch("main.requests.get")
+    @patch("module.main.requests.get")
     def test_successful_download_xml_file(self, mock_get):
         xml_content = b"<xml>content</xml>"
 
@@ -105,7 +105,7 @@ class TestMain(unittest.TestCase):
                 }
             ])
 
-            with patch('main.logger') as mock_logger:
+            with patch('module.main.logger') as mock_logger:
                 result_df = main.transform_first_xml(input_xml_dict)
 
                 pd.testing.assert_frame_equal(result_df, expected_df)
@@ -121,14 +121,14 @@ class TestMain(unittest.TestCase):
             }
         }
 
-        with patch('main.logger') as mock_logger:
+        with patch('module.main.logger') as mock_logger:
             result = main.transform_first_xml(input_xml_dict)
 
             self.assertIsNone(result)
             mock_logger.error.assert_called_once_with("Error transforming dictionary into DataFrame.")
 
 
-    @patch('main.logger', autospec=True)
+    @patch('module.main.logger', autospec=True)
     @patch('os.listdir')
     def test_get_dltins_filename(self, mock_listdir, mock_logger):
         mock_listdir.return_value = ["DLTINS_2023-08-15.xml", "other_file.txt", "DLTINS_2023-08-16.xml"]
@@ -138,7 +138,7 @@ class TestMain(unittest.TestCase):
         mock_logger.info.assert_called_once_with("Filename found: %s.", "DLTINS_2023-08-15.xml")
 
 
-    @patch('main.logger', autospec=True)
+    @patch('module.main.logger', autospec=True)
     @patch('os.listdir')
     def test_failed_get_dltins_filename(self, mock_listdir, mock_logger):
         mock_listdir.return_value = ["other_file.txt", "example.csv"]
@@ -148,8 +148,8 @@ class TestMain(unittest.TestCase):
         mock_logger.error.assert_called_once_with("Could not find file.")
 
 
-    @patch('main.boto3.client')
-    @patch('main.logger', autospec=True)
+    @patch('module.main.boto3.client')
+    @patch('module.main.logger', autospec=True)
     def test_transform_xml_to_csv(self, mock_logger, mock_boto3_client):
         sample_xml_dict = {
             'BizData': {
@@ -169,7 +169,6 @@ class TestMain(unittest.TestCase):
                                         }
                                     }
                                 },
-                                # Add more instrument entries here
                             ]
                         }
                     }
@@ -177,14 +176,11 @@ class TestMain(unittest.TestCase):
             }
         }
 
-        # Mock the S3 client and its put_object method
         mock_s3_client = MagicMock()
         mock_boto3_client.return_value = mock_s3_client
         
-        # Call the function with the sample XML dict
         main.transform_xml_to_csv(sample_xml_dict)
         
-        # Assert that the logger was called
         mock_logger.info.assert_called_once_with("Transformed xml into csv.")
         
         # Assert that the S3 client and its put_object method were called
@@ -198,11 +194,10 @@ class TestMain(unittest.TestCase):
         )
 
 
-    @patch('main.extract_xml_from_zip')
-    @patch('main.logger', autospec=True)
-    @patch('main.requests.get')
-    def test_successful_download_and_extract(self, mock_get, mock_logger, mock_extract_xml):
-        # Mock the requests.get response
+    @patch('module.main.extract_xml_from_zip')
+    @patch('module.main.logger', autospec=True)
+    @patch('module.main.requests.get')
+    def test_successful_download_zip(self, mock_get, mock_logger, mock_extract_xml):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.content = b'zip_content'
@@ -213,24 +208,19 @@ class TestMain(unittest.TestCase):
             {'file_type': 'DLTINS', 'download_link': 'https://example.com/file.zip', 'file_name': 'test.zip'}
         ])
         
-        # Call the function with the sample DataFrame
         result = main.download_zip(sample_df)
         
-        # Assert that the logger was called
         mock_logger.info.assert_called_once_with("%s downloaded successfully.", "test.zip")
         mock_logger.error.assert_not_called()
         
-        # Assert that the extract_xml_from_zip function was called
-        mock_extract_xml.assert_called_once_with(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test.zip'))
+        mock_extract_xml.assert_called_once_with(os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'module'), 'test.zip'))
         
-        # Assert the response content
         self.assertEqual(result, b'zip_content')
         
 
-    @patch('main.logger', autospec=True)
-    @patch('main.requests.get')
-    def test_failed_download(self, mock_get, mock_logger):
-        # Mock the requests.get response
+    @patch('module.main.logger', autospec=True)
+    @patch('module.main.requests.get')
+    def test_failed_download_zip(self, mock_get, mock_logger):
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_get.return_value = mock_response
@@ -240,16 +230,107 @@ class TestMain(unittest.TestCase):
             {'file_type': 'DLTINS', 'download_link': 'https://example.com/file.zip', 'file_name': 'test.zip'}
         ])
         
-        # Call the function with the sample DataFrame
         result = main.download_zip(sample_df)
         
-        # Assert that the logger was called
         mock_logger.error.assert_called_once_with("Failed to download the file. Status code: %d", 404)
         mock_logger.info.assert_not_called()
-        
-        # Assert the returned result
+
         self.assertIsNone(result)
 
 
+    @patch('module.main.logger', autospec=True)
+    def test_failed_no_file_type_download_zip(self, mock_logger):
+
+        # Create a sample DataFrame
+        sample_df = pd.DataFrame([
+            {'download_link': 'https://example.com/file.zip', 'file_name': 'test.zip'}
+        ])
+        
+        result = main.download_zip(sample_df)
+        
+        mock_logger.error.assert_called_once_with("Failed to find column file_type or download_link in DataFrame.")
+        mock_logger.info.assert_not_called()
+
+        self.assertIsNone(result)
+
+
+    @patch('module.main.logger', autospec=True)
+    def test_failed_empty_download_zip(self, mock_logger):
+
+        # Create a sample DataFrame
+        sample_df = pd.DataFrame()
+        
+        result = main.download_zip(sample_df)
+        
+        mock_logger.error.assert_called_once_with("Empty DataFrame.")
+        mock_logger.info.assert_not_called()
+
+        self.assertIsNone(result)
+
+
+    @patch('module.main.logger', autospec=True)
+    def test_failed_no_link_download_zip(self, mock_logger):
+
+        # Create a sample DataFrame
+        sample_df = pd.DataFrame([
+            {'file_type': 'DLTINS', 'download_link': '', 'file_name': 'test.zip'}
+        ])
+        
+        result = main.download_zip(sample_df)
+        
+        mock_logger.error.assert_called_once_with("Failed to find download_link in DataFrame.")
+        mock_logger.info.assert_not_called()
+
+        self.assertIsNone(result)
+
+
+    @patch('module.main.logger', autospec=True)
+    def test_failed_empty_file_type_download_zip(self, mock_logger):
+        
+        # Create a sample DataFrame
+        sample_df = pd.DataFrame([
+            {'file_type': '', 'download_link': 'https://example.com/file.zip', 'file_name': 'test.zip'}
+        ])
+        
+        result = main.download_zip(sample_df)
+        
+        mock_logger.error.assert_called_once_with("Failed to find DLTINS file_type in DataFrame.")
+        mock_logger.info.assert_not_called()
+
+        self.assertIsNone(result)
+    
+    
+    @patch('module.main.logger', autospec=True)
+    def test_extract_xml_from_zip_no_xml(self, mock_logger):
+        # Create a temporary directory for testing
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Create a mock zip file without an XML file
+            test_zip_path = os.path.join(tmp_dir, 'test.zip')
+            with zipfile.ZipFile(test_zip_path, 'w') as test_zip:
+                test_zip.writestr('text_file.txt', 'some text content')
+
+            main.extract_xml_from_zip(test_zip_path)
+
+            mock_logger.info.assert_not_called()
+            mock_logger.error.assert_called_once()
+
+
+    @patch('module.main.logger', autospec=True)
+    def test_extract_xml_from_zip_success(self, mock_logger):
+        # Create a temporary directory for testing
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Create a mock zip file with an XML file
+            test_zip_path = os.path.join(tmp_dir, 'test.zip')
+            with zipfile.ZipFile(test_zip_path, 'w') as test_zip:
+                test_zip.writestr('test.xml', '<xml>test content</xml>')
+
+            main.extract_xml_from_zip(test_zip_path)
+
+            mock_logger.info.assert_called_once()
+            mock_logger.error.assert_not_called()
+
+
+if __name__ == '__main__':
+    unittest.main()
 
 
